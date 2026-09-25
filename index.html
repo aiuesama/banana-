@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banana Chat</title>
+<meta name="theme-color" content="#667eea">
+<link href="https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&family=Yusei+Magic&family=RocknRoll+One&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:sans-serif;color:white;overflow:hidden;position:relative;height:100vh;}
+body::after{content:"";position:fixed;inset:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);z-index:-2;}
+body::before{content:"";position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:-1;}
+.container{display:flex;height:100vh;padding:15px;gap:15px;}
+.left{flex:1;background:rgba(0,0,0,0.45);border-radius:20px;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;}
+.header{padding:20px;border-bottom:1px solid rgba(255,255,255,0.1);}
+.header h2{color:#ffd54a;}
+.status{font-size:13px;color:rgba(255,255,255,0.7);margin-top:8px;}
+#chat{flex:1;overflow-y:auto;padding:15px;display:flex;flex-direction:column;gap:10px;}
+.msg{background:rgba(255,255,255,0.08);padding:10px 14px;border-radius:12px;word-break:break-word;backdrop-filter:blur(5px);animation:slideIn 0.3s ease;white-space:pre-wrap;}
+@keyframes slideIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.msg.own{background:rgba(255,204,0,0.2);align-self:flex-end;max-width:70%;border-bottom-right-radius:2px;}
+.msg.other{background:rgba(255,255,255,0.1);align-self:flex-start;max-width:70%;border-bottom-left-radius:2px;}
+.font-handwriting{font-family:'Klee One',cursive;font-size:15px;}
+.font-magic{font-family:'Yusei Magic',sans-serif;font-size:15px;}
+.font-pop{font-family:'RocknRoll One',sans-serif;font-size:15px;}
+.font-normal{font-family:sans-serif;font-size:14px;}
+.msg-copy{display:inline-block;margin-top:6px;padding:3px 10px;font-size:11px;border-radius:8px;background:rgba(255,255,255,0.2);color:white;font-weight:normal;}
+.msg-copy:hover{background:rgba(255,255,255,0.35);}
+.chat-image{max-width:100%;border-radius:8px;margin-top:8px;cursor:pointer;}
+.file-message{background:rgba(255,255,255,0.15);padding:12px;border-radius:8px;margin-top:8px;cursor:pointer;transition:all 0.3s;border:2px solid rgba(255,255,255,0.3);}
+.file-message:hover{background:rgba(255,255,255,0.25);transform:translateY(-2px);}
+.file-icon{font-size:32px;margin-bottom:8px;}
+.file-name{font-weight:bold;margin-bottom:4px;}
+.file-size{font-size:12px;color:rgba(255,255,255,0.7);}
+.file-progress{width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:8px;overflow:hidden;display:none;}
+.file-progress-fill{height:100%;background:linear-gradient(90deg,#ffcc00,#ffd633);border-radius:3px;width:0%;transition:width 0.2s;font-size:10px;color:#333;text-align:center;line-height:6px;}
+.timestamp{font-size:11px;color:rgba(255,255,255,0.5);margin-top:5px;text-align:right;font-family:sans-serif!important;}
+.input-area{padding:15px;border-top:1px solid rgba(255,255,255,0.1);}
+.font-selector{display:flex;gap:8px;margin-bottom:10px;overflow-x:auto;}
+.font-selector button{padding:8px 16px;font-size:12px;white-space:nowrap;flex-shrink:0;}
+.font-selector button.active{background:#ffcc00;color:#333;}
+.input-controls{display:flex;gap:10px;margin-bottom:10px;}
+textarea{width:100%;padding:12px;border:none;border-radius:12px;background:rgba(255,255,255,0.1);color:white;font-size:14px;resize:none;height:50px;font-family:inherit;margin-bottom:10px;}
+textarea:focus{outline:2px solid #ffcc00;}
+textarea::placeholder{color:rgba(255,255,255,0.5);}
+button{border:none;border-radius:12px;padding:12px 24px;background:#ffcc00;color:#333;font-weight:bold;cursor:pointer;transition:background 0.3s;font-size:14px;}
+button:hover{background:#ffd633;}
+button.secondary{background:rgba(255,255,255,0.2);color:white;}
+button.secondary:hover{background:rgba(255,255,255,0.3);}
+button.danger{background:#ff6b6b;color:white;}
+button.danger:hover{background:#ff5252;}
+button.success{background:#51cf66;color:white;}
+button.success:hover{background:#40c057;}
+.right{width:320px;display:flex;flex-direction:column;gap:15px;overflow-y:auto;max-height:calc(100vh - 30px);}
+.panel{background:rgba(0,0,0,0.45);border-radius:20px;backdrop-filter:blur(8px);padding:15px;flex-shrink:0;}
+.panel h3{margin-bottom:15px;color:#ffd54a;font-size:16px;}
+.video-container{display:flex;flex-direction:column;gap:10px;}
+video{width:100%;border-radius:12px;background:#000;cursor:pointer;}
+video:fullscreen{width:100vw;height:100vh;object-fit:contain;background:#000;}
+#myVideo{height:120px;object-fit:cover;}
+.remote-video-wrap{position:relative;}
+.remote-video-wrap video{height:120px;object-fit:contain;}
+.remote-video-wrap .rv-name{position:absolute;top:4px;left:8px;background:rgba(0,0,0,0.6);padding:2px 8px;border-radius:6px;font-size:11px;}
+.call-controls{display:flex;gap:8px;flex-wrap:wrap;}
+.call-controls button{flex:1;min-width:120px;padding:10px;font-size:13px;}
+#users{display:flex;flex-direction:column;gap:10px;max-height:300px;overflow-y:auto;}
+#users div{padding:10px;background:rgba(255,255,255,0.08);border-radius:8px;word-break:break-word;font-size:14px;}
+.user-me{background:rgba(255,204,0,0.2)!important;border-left:4px solid #ffcc00;}
+.login-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:1000;}
+.login-box{background:rgba(0,0,0,0.6);padding:40px;border-radius:20px;backdrop-filter:blur(15px);text-align:center;min-width:350px;border:1px solid rgba(255,255,255,0.1);}
+.login-box h2{color:#ffd54a;margin-bottom:20px;}
+.login-box input{width:100%;margin-bottom:20px;padding:12px;border:none;border-radius:12px;background:rgba(255,255,255,0.15);color:white;text-align:center;font-size:16px;}
+.login-box input:focus{outline:2px solid #ffcc00;}
+.login-box button{width:100%;font-size:16px;}
+@media(max-width:768px){.container{flex-direction:column;padding:10px;}.right{width:100%;max-height:300px;}}
+</style>
+</head>
+<body>
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Banana Chat</h2>
+    <input id="username" placeholder="ユーザー名を入力" maxlength="15" onkeydown="if(event.key==='Enter')login()">
+    <button type="button" id="loginBtn" onclick="login()">チャットに参加する</button>
+  </div>
+</div>
+<div class="container">
+  <div class="left">
+    <div class="header">
+      <h2 id="chatTitle">Banana Chat</h2>
+      <button class="secondary" id="pipBtn" onclick="toggleChatPip()" style="padding:4px 10px;font-size:11px;margin-top:8px;">チャット小窓（PiP）</button>
+      <div class="status" id="status">準備中...</div>
+      <button class="secondary" id="backBtn" onclick="showGroup()" style="display:none;padding:6px 12px;font-size:12px;margin-top:8px;">← 全体チャットにもどる</button>
+    </div>
+    <div id="chat"></div>
+    <div class="input-area">
+      <div class="font-selector">
+        <button class="secondary active" onclick="selectFont('normal')" id="btnNormal">標準</button>
+        <button class="secondary" onclick="selectFont('handwriting')" id="btnHandwriting">手書き風</button>
+        <button class="secondary" onclick="selectFont('magic')" id="btnMagic">まじっく</button>
+        <button class="secondary" onclick="selectFont('pop')" id="btnPop">ポップ</button>
+      </div>
+      <textarea id="msg" placeholder="メッセージを入力... (Enter で送信、Shift+Enter で改行)" onkeydown="handleKeyPress(event)"></textarea>
+      <div class="input-controls">
+        <button onclick="sendMessage()">送信</button>
+        <button class="secondary" onclick="document.getElementById('imageInput').click()">画像</button>
+        <button class="secondary" onclick="document.getElementById('fileInput').click()">ファイル</button>
+        <input type="file" id="imageInput" accept="image/*" onchange="sendImage(event)" style="display:none;">
+        <input type="file" id="fileInput" onchange="sendFile(event)" multiple style="display:none;">
+      </div>
+    </div>
+  </div>
+  <div class="right">
+    <div class="panel">
+      <h3>ビデオ通話 / 画面共有</h3>
+      <div class="video-container">
+        <div id="micBadge" style="font-size:12px;padding:5px 10px;border-radius:8px;text-align:center;font-weight:bold;background:#ff6b6b;color:white;transition:background 0.3s;">マイク: OFF (消音中)</div>
+        <video id="myVideo" autoplay muted playsinline></video>
+        <div id="remoteVideos"></div>
+        <div class="call-controls">
+          <button class="danger" onclick="endCall()">通話終了</button>
+          <button class="success" onclick="startScreenShare()">画面共有</button>
+          <button class="secondary" onclick="stopScreenShare()">共有停止</button>
+        </div>
+        <div class="call-controls">
+          <button class="danger" id="micBtn" onclick="toggleMic()">マイク: OFF (ミュート)</button>
+          <button class="secondary" id="camBtn" onclick="toggleCam()">カメラ: OFF</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>オンラインユーザー</h3>
+      <div id="users"></div>
+    </div>
+  </div>
+</div>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+'use strict';
+var GLOBAL_ROOM_ID='banana-global-chat-v2';
+var CHUNK_SIZE=64*1024;
+var BUFFER_THRESHOLD=1*1024*1024;
+var BUFFER_POLL_MS=50;
+var MAX_FILE_SIZE=500*1024*1024;
+var RECONNECT_DELAY=3000;
+var HUB_CONNECT_TIMEOUT=8000;
+var MAX_HUB_RETRIES=5;
+var FONT_MAP={normal:'',handwriting:'font-handwriting',magic:'font-magic',pop:'font-pop'};
+var peer=null;
+var connections=new Map();
+var userMap=new Map();
+var connUserMap=new Map();
+var receivedMessages=new Set();
+var myUsername='';
+var myId='';
+var isHub=false;
+var currentFont='normal';
+var localStream=null;
+var screenStream=null;
+var activeCalls=new Map();
+var isScreenSharing=false;
+var receivingFiles=new Map();
+var connState='idle';
+var hubRetryCount=0;
+var hubProbeCount=0;
+var hubConnectSettled=false;
+var hubConnectTimeout=null;
+var groupHistory=[];
+var dmHistory=new Map();
+var dmConns=new Map();
+var dmReceivingFiles=new Map();
+var currentDm=null;
+var unread=new Set();
+var micOn=false;
+var micAudioCtx=null;
+var micBoostGain=null;
+var rawMicStream=null;
+var camOn=false;
+var chatEl=document.getElementById('chat');
+var pipWindow=null;
+var chatPlaceholder=null;
+var pipLocalVideoUrl=null;
+var isLoggedIn=false;
+
+function login(){
+  var input=document.getElementById('username');
+  var u=input?input.value.trim():'';
+  if(!u){alert('ユーザー名を入力してください');return;}
+  myUsername=u;
+  isLoggedIn=true;
+  var overlay=document.getElementById('loginOverlay');
+  if(overlay)overlay.style.display='none';
+  if(typeof Peer==='undefined'){
+    updateStatus('接続モジュール読み込み中...');
+    var retries=0;
+    var checkTimer=setInterval(function(){
+      retries++;
+      if(typeof Peer!=='undefined'){
+        clearInterval(checkTimer);
+        startConnection();
+      }else if(retries>25){
+        clearInterval(checkTimer);
+        alert('PeerJSの読み込みに失敗しました。ネット接続や広告ブロッカー等を確認してリロードしてください。');
+        if(overlay)overlay.style.display='flex';
+      }
+    },200);
+    return;
+  }
+  startConnection();
+}
+window.login=login;
+
+function getTime(){var n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');}
+function formatFileSize(b){if(b===0)return'0 B';var k=1024,s=['B','KB','MB','GB'],i=Math.floor(Math.log(b)/Math.log(k));return Math.round(b/Math.pow(k,i)*100)/100+' '+s[i];}
+function getFileIcon(fn){var ext=fn.split('.').pop().toLowerCase();var icons={pdf:'📄',doc:'📘',docx:'📘',xls:'📗',xlsx:'📗',ppt:'📙',pptx:'📙',zip:'🗜️',rar:'🗜️','7z':'🗜️',mp3:'🎵',wav:'🎵',flac:'🎵',mp4:'🎬',avi:'🎬',mkv:'🎬',txt:'📝',html:'🌐',css:'🌐',js:'🌐'};return icons[ext]||'📎';}
+function genMsgId(){return myId+'_'+Date.now()+'_'+Math.random().toString(36).substring(2,9);}
+function updateStatus(t){var s=document.getElementById('status');if(s)s.innerText=t;}
+function scrollBottom(){var c=chatEl;if(c)c.scrollTop=c.scrollHeight;}
+
+function selectFont(f){
+  currentFont=f;
+  var ta=document.getElementById('msg');
+  if(ta)ta.className=FONT_MAP[f]||'';
+  document.querySelectorAll('.font-selector button').forEach(function(b){b.classList.remove('active');});
+  var btn=document.getElementById('btn'+f.charAt(0).toUpperCase()+f.slice(1));
+  if(btn)btn.classList.add('active');
+}
+function clearAllMaps(){connections.clear();userMap.clear();connUserMap.clear();dmConns.clear();}
+function destroyPeerSafely(){
+  if(hubConnectTimeout){clearTimeout(hubConnectTimeout);hubConnectTimeout=null;}
+  if(peer){try{peer.removeAllListeners();}catch(e){}try{peer.destroy();}catch(e){}peer=null;}
+}
+
+function startConnection(){
+  destroyPeerSafely();
+  clearAllMaps();
+  hubRetryCount=0;
+  hubProbeCount=0;
+  connState='idle';
+  startAsClient();
+}
+
+function startAsClient(){
+  if(connState==='connected'||connState==='connecting')return;
+  connState='connecting';
+  isHub=false;
+  updateStatus('シグナリングサーバーに接続中...');
+  destroyPeerSafely();
+  try{
+    peer=new Peer();
+  }catch(e){
+    console.warn('Peer init error:',e);
+    setTimeout(startAsClient,1000);
+    return;
+  }
+  peer.on('open',function(id){
+    myId=id;
+    updateStatus('ネットワークを検索中...');
+    tryConnectToHub();
+  });
+  peer.on('connection',function(conn){
+    if(conn.metadata&&conn.metadata.type==='dm'){setupDmConnection(conn);}
+    else{setupConnection(conn);}
+  });
+  peer.on('call',function(call){handleIncomingCall(call);});
+  peer.on('error',function(err){
+    console.warn('Client Peer Error:',err.type);
+    if(err.type==='peer-unavailable'){
+      if(hubConnectTimeout){clearTimeout(hubConnectTimeout);hubConnectTimeout=null;}
+      if(connState==='connected')return;
+      if(hubProbeCount<2){
+        hubProbeCount++;
+        tryConnectToHub();
+      }else{
+        hubProbeCount=0;
+        tryBecomeHub();
+      }
+    }
+    else if(err.type==='unavailable-id'){setTimeout(startAsClient,1000);}
+    else{updateStatus('接続エラー: '+err.type+' 再接続中...');setTimeout(function(){if(connState!=='connected')startAsClient();},RECONNECT_DELAY);}
+  });
+  peer.on('disconnected',function(){
+    if(connState==='connected'){
+      updateStatus('切断されました。再接続中...');
+      setTimeout(function(){if(peer&&!peer.destroyed){try{peer.reconnect();}catch(e){startConnection();}}},RECONNECT_DELAY);
+    }
+  });
+}
+
+function tryConnectToHub(){
+  if(!peer||peer.destroyed)return;
+  hubConnectSettled=false;
+  updateStatus(hubProbeCount>0?'ハブを再確認中... ('+hubProbeCount+'/2)':'ハブを検索中...');
+  var conn=peer.connect(GLOBAL_ROOM_ID,{reliable:true});
+  if(hubConnectTimeout)clearTimeout(hubConnectTimeout);
+  hubConnectTimeout=setTimeout(function(){
+    if(!hubConnectSettled&&!conn.open){
+      hubConnectSettled=true;
+      console.log('ハブ接続タイムアウト');
+      if(hubProbeCount<2){
+        hubProbeCount++;
+        tryConnectToHub();
+      }else{
+        hubProbeCount=0;
+        tryBecomeHub();
+      }
+    }
+  },HUB_CONNECT_TIMEOUT);
+  conn.on('open',function(){
+    if(hubConnectSettled)return;
+    hubConnectSettled=true;
+    if(hubConnectTimeout){clearTimeout(hubConnectTimeout);hubConnectTimeout=null;}
+    hubProbeCount=0;
+    connState='connected';
+    updateStatus('チャットに接続しました');
+    setupConnection(conn);
+  });
+  conn.on('error',function(){
+    if(hubConnectSettled)return;
+    hubConnectSettled=true;
+    if(hubConnectTimeout){clearTimeout(hubConnectTimeout);hubConnectTimeout=null;}
+    if(hubProbeCount<2){
+      hubProbeCount++;
+      tryConnectToHub();
+    }else{
+      hubProbeCount=0;
+      tryBecomeHub();
+    }
+  });
+}
+
+function tryBecomeHub(){
+  if(connState==='hub_try'||connState==='connected')return;
+  connState='hub_try';
+  destroyPeerSafely();
+  clearAllMaps();
+  isHub=true;
+  updateStatus('ルームホストとして起動中...');
+  try{
+    peer=new Peer(GLOBAL_ROOM_ID);
+  }catch(e){
+    console.warn('Hub init error:',e);
+    setTimeout(startAsClient,1000);
+    return;
+  }
+  var hubOpened=false;
+  peer.on('open',function(id){
+    hubOpened=true;
+    myId=id;
+    connState='connected';
+    updateStatus('ルームホストとして稼働中');
+    addSystemMessage('チャットルームが作成されました（あなたがホストです）');
+    updateUsers();
+  });
+  peer.on('connection',function(conn){
+    if(conn.metadata&&conn.metadata.type==='dm'){setupDmConnection(conn);}
+    else{setupConnection(conn);}
+  });
+  peer.on('call',function(call){handleIncomingCall(call);});
+  peer.on('error',function(err){
+    console.warn('Hub Peer Error:',err.type);
+    if(err.type==='unavailable-id'){
+      hubRetryCount++;
+      if(hubRetryCount>=MAX_HUB_RETRIES){
+        connState='failed';
+        isHub=false;
+        updateStatus('接続に失敗しました。ページをリロードしてください。');
+        return;
+      }
+      isHub=false;
+      connState='idle';
+      var delay=1000*Math.pow(2,hubRetryCount-1)+Math.floor(Math.random()*2000);
+      updateStatus('ハブが見つかりました。接続し直します... ('+hubRetryCount+'/'+MAX_HUB_RETRIES+')');
+      setTimeout(startAsClient,delay);
+    }else if(err.type==='network'||err.type==='server-error'){
+      updateStatus('サーバーエラー: '+err.type+' 再接続中...');
+      setTimeout(function(){if(connState!=='connected')startConnection();},RECONNECT_DELAY);
+    }
+  });
+  peer.on('disconnected',function(){
+    if(connState==='connected'&&hubOpened){
+      updateStatus('一時的に切断されました。ホストとして復帰を試みます...');
+      var tries=0;
+      var tryReconnect=function(){
+        if(!peer||peer.destroyed){startConnection();return;}
+        tries++;
+        try{peer.reconnect();}catch(e){
+          if(tries<10)setTimeout(tryReconnect,2000);
+          else startConnection();
+          return;
+        }
+        setTimeout(function(){
+          if(!peer||peer.destroyed){startConnection();return;}
+          if(!peer.disconnected)return;
+          if(tries<10)setTimeout(tryReconnect,2000);
+          else{
+            connState='idle';
+            isHub=false;
+            startConnection();
+          }
+        },2000);
+      };
+      tryReconnect();
+    }
+  });
+}
+
+function setupConnection(conn){
+  var peerId=conn.peer;
+  if(connections.has(peerId))return;
+  connections.set(peerId,conn);
+  var sendJoin=function(){try{conn.send({type:'join',username:myUsername,userId:myId});}catch(e){}};
+  if(conn.open)sendJoin();else conn.on('open',sendJoin);
+  conn.on('data',function(data){handleData(data,conn);});
+  conn.on('close',function(){
+    if(connections.get(peerId)!==conn)return;
+    var leftUserId=connUserMap.get(peerId);
+    var leftName='ゲスト';
+    connections.delete(peerId);
+    connUserMap.delete(peerId);
+    if(leftUserId){
+      var info=userMap.get(leftUserId);
+      if(info)leftName=info.name;
+      userMap.delete(leftUserId);
+      addSystemMessage(leftName+' が退室しました');
+      broadcastToOthers({type:'leave',userId:leftUserId},conn);
+    }
+    if(activeCalls.has(peerId)){activeCalls.get(peerId).close();activeCalls.delete(peerId);removeRemoteVideo(peerId);}
+    updateUsers();
+    if(!isHub&&connState==='connected'&&connections.size===0){
+      connState='idle';
+      updateStatus('ホストが退出しました。再接続中...');
+      setTimeout(startConnection,2000);
+    }
+  });
+  conn.on('error',function(e){console.warn('conn error',e);});
+}
+
+function broadcastToOthers(data,excludeConn){
+  connections.forEach(function(conn){
+    if(conn!==excludeConn&&conn.open){try{conn.send(data);}catch(e){console.warn('broadcast失敗',e);}}
+  });
+}
+
+function handleData(data,fromConn){
+  if(!data||typeof data!=='object')return;
+  switch(data.type){
+    case 'join':
+      if(data.userId===myId)return;
+      if(userMap.has(data.userId))return;
+      userMap.set(data.userId,{name:data.username});
+      if(fromConn)connUserMap.set(fromConn.peer,data.userId);
+      addSystemMessage(data.username+' が入室しました');
+      updateUsers();
+      broadcastToOthers(data,fromConn);
+      if(isHub&&fromConn&&fromConn.open){
+        var userList=[];
+        userMap.forEach(function(info,uid){if(uid!==data.userId&&uid!==myId)userList.push({userId:uid,username:info.name});});
+        userList.push({userId:myId,username:myUsername});
+        if(userList.length>0){try{fromConn.send({type:'user-list',users:userList});}catch(e){}}
+      }
+      if(camOn||micOn||isScreenSharing){setTimeout(renewCalls,500);}
+      break;
+    case 'user-list':
+      if(data.users&&Array.isArray(data.users)){
+        data.users.forEach(function(u){if(u.userId!==myId&&!userMap.has(u.userId))userMap.set(u.userId,{name:u.username});});
+        updateUsers();
+        if(camOn||micOn||isScreenSharing){setTimeout(renewCalls,500);}
+      }
+      break;
+    case 'message':
+      if(receivedMessages.has(data.messageId))return;
+      receivedMessages.add(data.messageId);
+      addMessage(data.username,data.text,false,data.font);
+      broadcastToOthers(data,fromConn);
+      break;
+    case 'image':
+      if(receivedMessages.has(data.messageId))return;
+      receivedMessages.add(data.messageId);
+      addImageMessage(data.username,data.imageData,false);
+      broadcastToOthers(data,fromConn);
+      break;
+    case 'file-meta':
+      if(receivedMessages.has(data.fileId))return;
+      receivedMessages.add(data.fileId);
+      receivingFiles.set(data.fileId,{meta:data,chunks:new Array(data.totalChunks),receivedSize:0});
+      addFileMessage(data.username,data.fileName,data.fileSize,null,false,data.fileId);
+      addSystemMessage(data.username+' が '+data.fileName+' ('+formatFileSize(data.fileSize)+') を送信中...');
+      break;
+    case 'file-chunk':
+      var rf=receivingFiles.get(data.fileId);
+      if(!rf)return;
+      rf.chunks[data.index]=new Uint8Array(data.data);
+      rf.receivedSize+=data.data.byteLength;
+      updateFileProgress(data.fileId,Math.round(rf.receivedSize/rf.meta.fileSize*100));
+      if(rf.receivedSize>=rf.meta.fileSize)completeFileReceive(data.fileId);
+      break;
+    case 'file-complete':
+      var cf=receivingFiles.get(data.fileId);
+      if(cf){
+        cf.receivedSize=cf.meta.fileSize;
+        completeFileReceive(data.fileId);
+      }
+      break;
+    case 'leave':
+      if(data.userId===myId)return;
+      var leftInfo=userMap.get(data.userId);
+      var leftName=leftInfo?leftInfo.name:'ゲスト';
+      userMap.delete(data.userId);
+      connUserMap.forEach(function(uid,cpid){if(uid===data.userId)connUserMap.delete(cpid);});
+      if(activeCalls.has(data.userId)){activeCalls.get(data.userId).close();activeCalls.delete(data.userId);removeRemoteVideo(data.userId);}
+      addSystemMessage(leftName+' が退室しました');
+      updateUsers();
+      broadcastToOthers(data,fromConn);
+      break;
+  }
+}
+
+function updateFileProgress(fileId,percent){
+  var bar=document.getElementById('prog-'+fileId);
+  if(!bar&&pipWindow&&!pipWindow.closed)bar=pipWindow.document.getElementById('prog-'+fileId);
+  if(bar){var fill=bar.querySelector('.file-progress-fill');fill.style.width=percent+'%';fill.textContent=percent+'%';}
+}
+
+function attachFileUrl(history,fileId,url){
+  for(var i=history.length-1;i>=0;i--){
+    if(history[i].kind==='file'&&history[i].fileId===fileId&&!history[i].url){history[i].url=url;break;}
+  }
+}
+
+function completeFileReceive(fileId){
+  var rf=receivingFiles.get(fileId);
+  if(!rf)return;
+  receivingFiles.delete(fileId);
+  var blob=new Blob(rf.chunks,{type:rf.meta.mime||'application/octet-stream'});
+  var url=URL.createObjectURL(blob);
+  attachFileUrl(groupHistory,fileId,url);
+  addSystemMessage(rf.meta.fileName+' の受信が完了しました');
+  if(!currentDm)renderChat();
+}
+
+async function sendFile(event){
+  var files=event.target.files;
+  if(!files||files.length===0){event.target.value='';return;}
+  if(currentDm){
+    for(var di=0;di<files.length;di++){await sendDmFile(currentDm,files[di]);}
+    event.target.value='';return;
+  }
+  var targets=[];
+  connections.forEach(function(conn,pid){if(conn.open)targets.push({pid:pid,conn:conn});});
+  if(targets.length===0){addSystemMessage('接続中の相手がいません');event.target.value='';return;}
+  var arr=Array.prototype.slice.call(files);
+  var localIds=arr.map(function(f){return genMsgId();});
+  arr.forEach(function(f,i){
+    addFileMessage(myUsername,f.name,f.size,null,true,localIds[i]);
+  });
+  var remaining=targets.length;
+  targets.forEach(function(t){
+    enqueueSend(t.pid,t.conn,arr,localIds,function(){
+      remaining--;
+      if(remaining===0)addSystemMessage(arr.length+' 個のファイルを全員に送信しました');
+    });
+  });
+  event.target.value='';
+}
+
+var sendQueues=new Map();
+
+function enqueueSend(pid,conn,files,localIds,onQueueDone){
+  var q=sendQueues.get(pid);
+  if(!q){q={busy:false,jobs:[]};sendQueues.set(pid,q);}
+  q.jobs.push({conn:conn,files:files,localIds:localIds,onQueueDone:onQueueDone});
+  pumpSendQueue(pid);
+}
+
+function pumpSendQueue(pid){
+  var q=sendQueues.get(pid);
+  if(!q||q.busy||q.jobs.length===0)return;
+  q.busy=true;
+  var job=q.jobs.shift();
+  var sendNextFile=function(i){
+    if(i>=job.files.length||!job.conn.open){
+      job.onQueueDone();
+      q.busy=false;
+      pumpSendQueue(pid);
+      return;
+    }
+    sendOneFileToConn(job.conn,job.files[i],job.localIds[i],function(){sendNextFile(i+1);});
+  };
+  sendNextFile(0);
+}
+
+function sendOneFileToConn(conn,file,fileId,done){
+  var totalChunks=Math.ceil(file.size/CHUNK_SIZE);
+  if(!conn.open){addSystemMessage(file.name+' を送れませんでした（相手が切断）');if(done)done();return;}
+  var meta={type:'file-meta',fileId:fileId,username:myUsername,fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks};
+  try{conn.send(meta);}catch(e){}
+  var offset=0;
+  var chunkIndex=0;
+  var sendNext=function(){
+    if(offset>=file.size){
+      try{conn.send({type:'file-complete',fileId:fileId});}catch(e){}
+      updateFileProgress(fileId,100);
+      attachFileUrl(groupHistory,fileId,URL.createObjectURL(file));
+      if(!currentDm)renderChat();
+      if(done)done();
+      return;
+    }
+    if(!conn.open){
+      addSystemMessage(file.name+' の送信が途中で失敗しました');
+      if(done)done();
+      return;
+    }
+    var end=Math.min(offset+CHUNK_SIZE,file.size);
+    var slice=file.slice(offset,end);
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{conn.send({type:'file-chunk',fileId:fileId,index:chunkIndex,data:e.target.result});}catch(err){}
+      chunkIndex++;
+      offset=end;
+      updateFileProgress(fileId,Math.min(100,Math.round(offset/file.size*100)));
+      waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?40:2);});
+    };
+    reader.onerror=function(err){console.error('FileReader error:',err);if(done)done();};
+    reader.readAsArrayBuffer(slice);
+  };
+  sendNext();
+}
+
+function waitForBufferDrain(conn){
+  return new Promise(function(resolve){
+    var check=function(){
+      if(!conn.open){resolve();return;}
+      if(conn.bufferSize<BUFFER_THRESHOLD)resolve();else setTimeout(check,BUFFER_POLL_MS);
+    };
+    check();
+  });
+}
+
+function sendImage(event){
+  var file=event.target.files[0];
+  if(!file){event.target.value='';return;}
+  if(currentDm){
+    if(file.size>MAX_FILE_SIZE){alert('ファイルサイズが大きすぎます');event.target.value='';return;}
+    sendDmImage(currentDm,file);
+    event.target.value='';return;
+  }
+  if(file.size>MAX_FILE_SIZE){alert('ファイルサイズが大きすぎます');event.target.value='';return;}
+  var reader=new FileReader();
+  reader.onload=function(){
+    var messageId=genMsgId();
+    var data={type:'image',username:myUsername,imageData:reader.result,messageId:messageId};
+    receivedMessages.add(messageId);
+    connections.forEach(function(conn){if(conn.open)try{conn.send(data);}catch(e){}});
+    addImageMessage(myUsername,reader.result,true);
+  };
+  reader.readAsDataURL(file);
+  event.target.value='';
+}
+
+function sendText(text){
+  if(text.trim()===''||!myUsername)return;
+  if(currentDm){sendDmMessage(currentDm,text);return;}
+  var messageId=genMsgId();
+  var data={type:'message',username:myUsername,text:text,font:currentFont,messageId:messageId};
+  receivedMessages.add(messageId);
+  connections.forEach(function(conn){if(conn.open)try{conn.send(data);}catch(e){}});
+  addMessage(myUsername,text,true,currentFont);
+}
+
+function sendMessage(){
+  var input=document.getElementById('msg');
+  var text=input?input.value:'';
+  if(text.trim()===''||!myUsername)return;
+  input.value='';input.focus();
+  sendText(text);
+}
+
+function handleKeyPress(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
+
+/* --- 表示（履歴方式） --- */
+
+function pushGroup(item){
+  item.time=getTime();
+  groupHistory.push(item);
+  if(!currentDm){renderItem(item);scrollBottom();}
+}
+
+function pushDm(uid,item){
+  item.time=getTime();
+  if(!dmHistory.has(uid))dmHistory.set(uid,[]);
+  dmHistory.get(uid).push(item);
+  if(currentDm===uid){renderItem(item);scrollBottom();}
+  else if(!item.own){unread.add(uid);updateUsers();}
+}
+
+function renderChat(){
+  var c=chatEl;
+  if(!c)return;
+  c.innerHTML='';
+  var items=currentDm?(dmHistory.get(currentDm)||[]):groupHistory;
+  items.forEach(function(it){renderItem(it);});
+  var info=currentDm?userMap.get(currentDm):null;
+  var titleEl=document.getElementById('chatTitle');
+  if(titleEl)titleEl.innerText=info?info.name+' との個人チャット':'Banana Chat';
+  var backBtn=document.getElementById('backBtn');
+  if(backBtn)backBtn.style.display=currentDm?'inline-block':'none';
+  c.scrollTop=c.scrollHeight;
+}
+
+function renderItem(it){
+  var c=chatEl;
+  if(!c)return;
+  if(it.kind==='sys'){
+    var sys=document.createElement('div');
+    sys.style.cssText='text-align:center;color:rgba(255,255,255,0.5);font-size:12px;margin:10px 0;';
+    sys.innerText=it.text;
+    c.appendChild(sys);
+    return;
+  }
+  var msg=document.createElement('div');
+  msg.className=it.own?'msg own':'msg other';
+  var nameDiv=document.createElement('div');nameDiv.innerText=it.username;
+  msg.appendChild(nameDiv);
+  if(it.kind==='msg'){
+    var t=document.createElement('div');t.innerText=it.text;
+    if(FONT_MAP[it.font])t.classList.add(FONT_MAP[it.font]);
+    msg.appendChild(t);
+    var cp=document.createElement('button');
+    cp.className='msg-copy';
+    cp.textContent='📋 コピー';
+    cp.onclick=function(){
+      var btn=this;
+      copyMessageText(it.text,btn);
+    };
+    msg.appendChild(cp);
+  }else if(it.kind==='image'){
+    var img=document.createElement('img');img.src=it.imageData;img.className='chat-image';
+    img.onclick=function(){window.open(it.imageData);};
+    msg.appendChild(img);
+  }else if(it.kind==='file'){
+    var fileDiv=document.createElement('div');fileDiv.className='file-message';
+    if(it.url)fileDiv.onclick=function(){downloadFile(it.fileName,it.url);};
+    var icon=document.createElement('div');icon.className='file-icon';icon.innerText=getFileIcon(it.fileName);
+    var nm=document.createElement('div');nm.className='file-name';nm.innerText=it.fileName;
+    var sz=document.createElement('div');sz.className='file-size';sz.innerText=formatFileSize(it.fileSize);
+    fileDiv.appendChild(icon);fileDiv.appendChild(nm);fileDiv.appendChild(sz);
+    if(!it.url&&it.fileId){
+      var prog=document.createElement('div');prog.className='file-progress';prog.style.display='block';prog.id='prog-'+it.fileId;
+      prog.innerHTML='<div class="file-progress-fill" style="width:0%"></div>';
+      fileDiv.appendChild(prog);
+    }
+    msg.appendChild(fileDiv);
+  }
+  var time=document.createElement('div');time.className='timestamp';time.innerText=it.time||getTime();
+  msg.appendChild(time);
+  c.appendChild(msg);
+}
+
+function addMessage(username,text,isOwn,font){pushGroup({kind:'msg',username:username,text:text,font:font,own:isOwn});}
+function addImageMessage(username,imageData,isOwn){pushGroup({kind:'image',username:username,imageData:imageData,own:isOwn});}
+function addFileMessage(username,fileName,fileSize,url,isOwn,fileId){pushGroup({kind:'file',username:username,fileName:fileName,fileSize:fileSize,fileId:fileId,url:url,own:isOwn});}
+function addSystemMessage(text){pushGroup({kind:'sys',text:text});}
+
+function downloadFile(fileName,url){var a=document.createElement('a');a.href=url;a.download=fileName;a.click();}
+
+/* --- 個人チャット --- */
+
+function openDm(uid){currentDm=uid;unread.delete(uid);renderChat();updateUsers();}
+function showGroup(){currentDm=null;renderChat();updateUsers();}
+
+function ensureDmConn(uid){
+  var existing=dmConns.get(uid);
+  if(existing&&existing.open)return Promise.resolve(existing);
+  return new Promise(function(resolve,reject){
+    if(!peer||peer.destroyed){reject(new Error('no peer'));return;}
+    var conn=peer.connect(uid,{reliable:true,metadata:{type:'dm'}});
+    var settled=false;
+    var timeout=setTimeout(function(){
+      if(!settled){settled=true;try{conn.close();}catch(e){}dmConns.delete(uid);reject(new Error('timeout'));}
+    },10000);
+    conn.on('open',function(){
+      if(settled)return;
+      settled=true;clearTimeout(timeout);
+      dmConns.set(uid,conn);
+      try{conn.send({type:'dm-hello',username:myUsername,userId:myId});}catch(e){}
+      resolve(conn);
+    });
+    conn.on('error',function(){
+      if(!settled){settled=true;clearTimeout(timeout);dmConns.delete(uid);reject(new Error('error'));}
+    });
+    conn.on('close',function(){if(dmConns.get(uid)===conn)dmConns.delete(uid);});
+    conn.on('data',function(data){handleDmData(data,conn);});
+  });
+}
+
+function setupDmConnection(conn){
+  var uid=conn.peer;
+  var old=dmConns.get(uid);
+  if(old&&old!==conn){try{old.close();}catch(e){}}
+  dmConns.set(uid,conn);
+  var sendHello=function(){try{conn.send({type:'dm-hello',username:myUsername,userId:myId});}catch(e){}};
+  if(conn.open)sendHello();else conn.on('open',sendHello);
+  conn.on('data',function(data){handleDmData(data,conn);});
+  conn.on('close',function(){if(dmConns.get(uid)===conn)dmConns.delete(uid);});
+  conn.on('error',function(e){console.warn('dm conn error',e);});
+}
+
+function handleDmData(data,conn){
+  if(!data||typeof data!=='object')return;
+  var uid=conn.peer;
+  switch(data.type){
+    case 'dm-hello':
+      if(!userMap.has(uid))userMap.set(uid,{name:data.username||'ユーザー'});
+      updateUsers();
+      break;
+    case 'dm':
+      if(receivedMessages.has(data.messageId))return;
+      receivedMessages.add(data.messageId);
+      pushDm(uid,{kind:'msg',username:data.from,text:data.text,font:data.font,own:false});
+      break;
+    case 'dm-image':
+      if(receivedMessages.has(data.messageId))return;
+      receivedMessages.add(data.messageId);
+      pushDm(uid,{kind:'image',username:data.from,imageData:data.imageData,own:false});
+      break;
+    case 'dm-meta':
+      dmReceivingFiles.set(data.fileId,{meta:data,chunks:new Array(data.totalChunks),receivedSize:0});
+      pushDm(uid,{kind:'file',username:data.from,fileName:data.fileName,fileSize:data.fileSize,fileId:data.fileId,url:null,own:false});
+      break;
+    case 'dm-chunk':
+      var rf=dmReceivingFiles.get(data.fileId);
+      if(!rf)return;
+      rf.chunks[data.index]=new Uint8Array(data.data);
+      rf.receivedSize+=data.data.byteLength;
+      updateFileProgress(data.fileId,Math.min(100,Math.round(rf.receivedSize/rf.meta.fileSize*100)));
+      if(rf.receivedSize>=rf.meta.fileSize)completeDmFileReceive(uid,data.fileId);
+      break;
+    case 'dm-complete':
+      if(dmReceivingFiles.has(data.fileId))completeDmFileReceive(uid,data.fileId);
+      break;
+  }
+}
+
+function completeDmFileReceive(uid,fileId){
+  var rf=dmReceivingFiles.get(fileId);
+  if(!rf)return;
+  dmReceivingFiles.delete(fileId);
+  var blob=new Blob(rf.chunks,{type:rf.meta.mime||'application/octet-stream'});
+  var url=URL.createObjectURL(blob);
+  var items=dmHistory.get(uid);
+  if(items)attachFileUrl(items,fileId,url);
+  if(currentDm===uid)renderChat();
+  else{unread.add(uid);updateUsers();}
+}
+
+function sendDmMessage(uid,text){
+  var messageId=genMsgId();
+  pushDm(uid,{kind:'msg',username:myUsername,text:text,font:currentFont,own:true});
+  ensureDmConn(uid).then(function(conn){
+    conn.send({type:'dm',from:myUsername,text:text,font:currentFont,messageId:messageId});
+  }).catch(function(){
+    pushDm(uid,{kind:'sys',text:'個人チャットに接続できませんでした'});
+  });
+}
+
+function sendDmImage(uid,file){
+  var reader=new FileReader();
+  reader.onload=function(){
+    var messageId=genMsgId();
+    pushDm(uid,{kind:'image',username:myUsername,imageData:reader.result,own:true});
+    ensureDmConn(uid).then(function(conn){
+      conn.send({type:'dm-image',from:myUsername,imageData:reader.result,messageId:messageId});
+    }).catch(function(){
+      pushDm(uid,{kind:'sys',text:'個人チャットに接続できませんでした'});
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function sendDmFile(uid,file){
+  if(file.size>MAX_FILE_SIZE){alert(file.name+' はサイズが大きすぎます（最大 '+formatFileSize(MAX_FILE_SIZE)+'）');return Promise.resolve();}
+  var fileId=genMsgId();
+  var totalChunks=Math.ceil(file.size/CHUNK_SIZE);
+  pushDm(uid,{kind:'file',username:myUsername,fileName:file.name,fileSize:file.size,fileId:fileId,url:null,own:true});
+  return ensureDmConn(uid).then(function(conn){
+    conn.send({type:'dm-meta',fileId:fileId,from:myUsername,fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks});
+    return new Promise(function(resolve){
+      var offset=0,index=0;
+      var sendNext=function(){
+        if(offset>=file.size){
+          try{conn.send({type:'dm-complete',fileId:fileId});}catch(e){}
+          updateFileProgress(fileId,100);
+          var items=dmHistory.get(uid);
+          if(items)attachFileUrl(items,fileId,URL.createObjectURL(file));
+          if(currentDm===uid)renderChat();
+          resolve();return;
+        }
+        if(!conn.open){resolve();return;}
+        var end=Math.min(offset+CHUNK_SIZE,file.size);
+        var slice=file.slice(offset,end);
+        var reader=new FileReader();
+        reader.onload=function(e){
+          if(!conn.open){resolve();return;}
+          try{conn.send({type:'dm-chunk',fileId:fileId,index:index,data:e.target.result});}catch(err){}
+          index++;offset=end;
+          updateFileProgress(fileId,Math.min(100,Math.round(offset/file.size*100)));
+          waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?40:2);});
+        };
+        reader.onerror=function(){resolve();};
+        reader.readAsArrayBuffer(slice);
+      };
+      sendNext();
+    });
+  }).catch(function(){
+    pushDm(uid,{kind:'sys',text:'個人チャットに接続できませんでした'});
+  });
+}
+
+/* --- ユーザー一覧 --- */
+
+function updateUsers(){
+  var usersDiv=document.getElementById('users');
+  if(!usersDiv)return;
+  usersDiv.innerHTML='';
+  var me=document.createElement('div');
+  me.className='user-me';
+  me.innerText=myUsername+' (あなた)';
+  usersDiv.appendChild(me);
+  var count=1;
+  userMap.forEach(function(info,uid){
+    if(uid!==myId){
+      count++;
+      var div=document.createElement('div');
+      div.innerText=info.name+(unread.has(uid)?' （新着）':'');
+      div.style.cursor='pointer';
+      if(currentDm===uid)div.style.background='rgba(255,204,0,0.15)';
+      div.onclick=function(){openDm(uid);};
+      usersDiv.appendChild(div);
+    }
+  });
+  updateStatus('オンライン: '+count+'人');
+}
+
+/* --- 通話・画面共有 --- */
+
+function updateMediaBtns(){
+  var micBtn=document.getElementById('micBtn');
+  var micBadge=document.getElementById('micBadge');
+  if(micBtn){
+    if(micOn){
+      micBtn.className='success';
+      micBtn.innerText='マイク: ON (集音中)';
+    }else{
+      micBtn.className='danger';
+      micBtn.innerText='マイク: OFF (ミュート)';
+    }
+  }
+  if(micBadge){
+    if(micOn){
+      micBadge.style.background='#51cf66';
+      micBadge.innerText='マイク: ON (集音中)';
+    }else{
+      micBadge.style.background='#ff6b6b';
+      micBadge.innerText='マイク: OFF (消音中)';
+    }
+  }
+  var camBtn=document.getElementById('camBtn');
+  if(camBtn){
+    if(camOn){
+      camBtn.className='success';
+      camBtn.innerText='カメラ: ON';
+    }else{
+      camBtn.className='secondary';
+      camBtn.innerText='カメラ: OFF';
+    }
+  }
+}
+
+function toggleMic(){
+  if(!micOn){
+    navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:true}}).then(function(audioStream){
+      rawMicStream=audioStream;
+      var rawTrack=audioStream.getAudioTracks()[0];
+      try{
+        micAudioCtx=new (window.AudioContext||window.webkitAudioContext)();
+        var src=micAudioCtx.createMediaStreamSource(new MediaStream([rawTrack]));
+        micBoostGain=micAudioCtx.createGain();
+        micBoostGain.gain.value=2.5;
+        var dst=micAudioCtx.createMediaStreamDestination();
+        src.connect(micBoostGain);
+        micBoostGain.connect(dst);
+        var boostedTrack=dst.stream.getAudioTracks()[0];
+        if(localStream&&localStream.getTracks().length>0){localStream.addTrack(boostedTrack);}
+        else{localStream=dst.stream;}
+      }catch(e){
+        if(localStream&&localStream.getTracks().length>0){localStream.addTrack(rawTrack);}
+        else{localStream=audioStream;}
+      }
+      micOn=true;
+      updateMediaBtns();
+      renewCalls();
+      addSystemMessage('マイクを ON (集音中・声量ブーストあり) にしました');
+    }).catch(function(err){console.error(err);alert('マイクへのアクセスが拒否されました');});
+  }else{
+    if(localStream){
+      localStream.getAudioTracks().forEach(function(t){localStream.removeTrack(t);t.stop();});
+    }
+    if(micAudioCtx){try{micAudioCtx.close();}catch(e){}micAudioCtx=null;}
+    if(rawMicStream){rawMicStream.getTracks().forEach(function(t){t.stop();});rawMicStream=null;}
+    micOn=false;
+    updateMediaBtns();
+    if(!camOn&&!isScreenSharing){endCall();}
+    else{renewCalls();}
+    addSystemMessage('マイクを OFF (ミュート) にしました');
+  }
+}
+
+function toggleCam(){
+  if(!camOn){
+    navigator.mediaDevices.getUserMedia({video:{width:{max:640},frameRate:{max:20}},audio:false}).then(function(camStream){
+      var vt=camStream.getVideoTracks()[0];
+      if(localStream&&localStream.getTracks().length>0){localStream.addTrack(vt);}
+      else{localStream=camStream;}
+      camOn=true;
+      document.getElementById('myVideo').srcObject=localStream;
+      updateMediaBtns();
+      renewCalls();
+      addSystemMessage('カメラを ON にしました');
+    }).catch(function(err){console.error(err);alert('カメラへのアクセスが拒否されました');});
+  }else{
+    if(localStream){localStream.getVideoTracks().forEach(function(t){localStream.removeTrack(t);t.stop();});}
+    camOn=false;
+    updateMediaBtns();
+    if(!micOn&&!isScreenSharing){endCall();}
+    else{renewCalls();}
+    addSystemMessage('カメラを OFF にしました');
+  }
+}
+
+function buildShareStream(){
+  var tracks=[];
+  if(screenStream){
+    var vt=screenStream.getVideoTracks()[0];
+    if(vt)tracks.push(vt);
+  }
+  var at=null;
+  if(micOn&&localStream)at=localStream.getAudioTracks()[0];
+  if(!at&&screenStream)at=screenStream.getAudioTracks()[0];
+  if(at)tracks.push(at);
+  return new MediaStream(tracks);
+}
+
+function getStreamToSend(){
+  if(isScreenSharing&&screenStream)return buildShareStream();
+  return localStream;
+}
+
+function renewCalls(){
+  if(!peer||peer.destroyed)return;
+  var streamToSend=getStreamToSend();
+  if(!streamToSend||streamToSend.getTracks().length===0){
+    activeCalls.forEach(function(call){try{call.close();}catch(e){}});
+    activeCalls.clear();
+    return;
+  }
+  userMap.forEach(function(info,uid){
+    if(uid===myId)return;
+    var existingCall=activeCalls.get(uid);
+    if(existingCall&&existingCall.peerConnection&&existingCall.peerConnection.signalingState!=='closed'){
+      var vt=streamToSend.getVideoTracks()[0];
+      var at=streamToSend.getAudioTracks()[0];
+      var vSender=existingCall.peerConnection.getSenders().find(function(s){return s.track&&s.track.kind==='video';});
+      var aSender=existingCall.peerConnection.getSenders().find(function(s){return s.track&&s.track.kind==='audio';});
+      var canReplace=true;
+      if(vt&&!vSender)canReplace=false;
+      if(at&&!aSender)canReplace=false;
+      if(canReplace){
+        if(vSender)vSender.replaceTrack(vt||null);
+        if(aSender)aSender.replaceTrack(at||null);
+        return;
+      }
+    }
+    if(existingCall){try{existingCall.close();}catch(e){}}
+    var call=peer.call(uid,streamToSend);
+    if(!call)return;
+    activeCalls.set(uid,call);
+    call.on('stream',function(remoteStream){addRemoteVideo(uid,remoteStream);});
+    call.on('close',function(){
+      if(activeCalls.get(uid)===call){removeRemoteVideo(uid);activeCalls.delete(uid);}
+    });
+    call.on('error',function(err){console.warn('Call error with '+uid,err);});
+  });
+}
+
+function handleIncomingCall(call){
+  var uid=call.peer;
+  if(activeCalls.has(uid)&&activeCalls.get(uid)!==call){
+    try{activeCalls.get(uid).close();}catch(e){}
+  }
+  activeCalls.set(uid,call);
+  var streamToSend=getStreamToSend();
+  if(streamToSend&&streamToSend.getTracks().length>0){
+    call.answer(streamToSend);
+  }else{
+    call.answer();
+  }
+  call.on('stream',function(remoteStream){
+    addRemoteVideo(uid,remoteStream);
+  });
+  call.on('close',function(){
+    if(activeCalls.get(uid)===call){removeRemoteVideo(uid);activeCalls.delete(uid);}
+  });
+  call.on('error',function(err){console.warn('Call error with '+uid,err);});
+}
+
+function endCall(){
+  activeCalls.forEach(function(call){try{call.close();}catch(e){}});
+  activeCalls.clear();
+  if(localStream){localStream.getTracks().forEach(function(t){t.stop();});localStream=null;}
+  if(micAudioCtx){try{micAudioCtx.close();}catch(e){}micAudioCtx=null;}
+  if(rawMicStream){rawMicStream.getTracks().forEach(function(t){t.stop();});rawMicStream=null;}
+  if(screenStream){screenStream.getTracks().forEach(function(t){t.stop();});screenStream=null;}
+  isScreenSharing=false;
+  micOn=false;
+  camOn=false;
+  document.getElementById('myVideo').srcObject=null;
+  document.getElementById('remoteVideos').innerHTML='';
+  updateMediaBtns();
+  addSystemMessage('通話を終了しました');
+}
+
+function startScreenShare(){
+  if(userMap.size===0){alert('接続している相手がいません');return;}
+  navigator.mediaDevices.getDisplayMedia({video:{frameRate:{max:15},width:{max:1280}},audio:true}).then(function(stream){
+    screenStream=stream;isScreenSharing=true;
+    document.getElementById('myVideo').srcObject=stream;
+    renewCalls();
+    addSystemMessage('画面共有を開始しました');
+    stream.getVideoTracks()[0].onended=function(){stopScreenShare();};
+  }).catch(function(err){console.error('画面共有エラー:',err);alert('画面共有が拒否されました');});
+}
+
+function stopScreenShare(){
+  if(screenStream){screenStream.getTracks().forEach(function(t){t.stop();});screenStream=null;}
+  isScreenSharing=false;
+  document.getElementById('myVideo').srcObject=localStream||null;
+  if(localStream&&localStream.getTracks().length>0){
+    renewCalls();
+  }else{
+    endCall();
+  }
+  addSystemMessage('画面共有を停止しました');
+}
+
+function addRemoteVideo(peerId,stream){
+  var container=document.getElementById('remoteVideos');
+  var existing=document.getElementById('rv-'+peerId);
+  if(existing){
+    var v=existing.querySelector('video');
+    if(v&&v.srcObject!==stream)v.srcObject=stream;
+    var a=existing.querySelector('audio');
+    if(a&&a.srcObject!==stream)a.srcObject=stream;
+    return;
+  }
+  var wrap=document.createElement('div');wrap.className='remote-video-wrap';wrap.id='rv-'+peerId;
+  var name=document.createElement('div');name.className='rv-name';
+  var info=userMap.get(peerId);
+  name.innerText=info?info.name:'ゲスト';
+  var video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;video.srcObject=stream;
+  video.addEventListener('click',function(){toggleFullscreen(video);});
+  var audio=document.createElement('audio');audio.autoplay=true;audio.srcObject=stream;
+  try{audio.play().catch(function(){});}catch(e){}
+  wrap.appendChild(name);wrap.appendChild(video);wrap.appendChild(audio);container.appendChild(wrap);
+}
+
+function removeRemoteVideo(peerId){var el=document.getElementById('rv-'+peerId);if(el)el.remove();}
+
+function toggleFullscreen(el){
+  if(document.fullscreenElement){
+    document.exitFullscreen();
+  }else if(el.requestFullscreen){
+    el.requestFullscreen();
+  }
+}
+
+/* --- チャット小窓（Document PiP） --- */
+
+function copyMessageText(text,btn){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){
+      if(btn){btn.textContent='コピー済 ✓';setTimeout(function(){btn.textContent='📋 コピー';},1500);}
+    }).catch(function(){fallbackCopy(text);});
+  }else{
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text){
+  var ta=document.createElement('textarea');
+  ta.value=text;
+  ta.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select();
+  try{
+    document.execCommand('copy');
+    addSystemMessage('メッセージをコピーしました');
+  }catch(e){
+    alert('コピーに失敗しました');
+  }
+  ta.remove();
+}
+
+function copyStylesToPip(win){
+  try{
+    var d=win.document;
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(function(l){d.head.appendChild(l.cloneNode(false));});
+    Array.from(document.styleSheets).forEach(function(ss){
+      try{
+        var rules=Array.from(ss.cssRules).map(function(r){return r.cssText;}).join('');
+        var st=d.createElement('style');st.textContent=rules;d.head.appendChild(st);
+      }catch(e){}
+    });
+  }catch(e){}
+}
+
+function openChatPip(){
+  if(pipWindow&&!pipWindow.closed)return;
+  if(!window.documentPictureInPicture){alert('このブラウザはチャット小窓（PiP）に対応していません');return;}
+  window.documentPictureInPicture.requestWindow({width:400,height:480}).then(function(win){
+    pipWindow=win;
+    copyStylesToPip(win);
+    var d=win.document;
+    d.body.style.cssText='margin:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;flex-direction:column;height:100vh;overflow:hidden;font-family:sans-serif;';
+
+    var pipModes=['split','video_full','chat_full'];
+    var currentModeIdx=0;
+
+    var vidWrap=d.createElement('div');
+    vidWrap.id='pipVidWrap';
+    vidWrap.style.cssText='flex-shrink:0;padding:6px;background:rgba(0,0,0,0.35);display:flex;flex-direction:column;gap:4px;border-bottom:1px solid rgba(255,255,255,0.1);transition:all 0.2s;';
+
+    var vidControls=d.createElement('div');
+    vidControls.style.cssText='display:flex;gap:6px;align-items:center;';
+
+    var fileInput=d.createElement('input');
+    fileInput.type='file';
+    fileInput.accept='video/*';
+    fileInput.style.display='none';
+
+    var selectBtn=d.createElement('button');
+    selectBtn.textContent='📁 落としたて動画を開く (D&D可)';
+    selectBtn.style.cssText='padding:5px 8px;font-size:11px;background:#ffd54a;color:#222;border:none;border-radius:6px;font-weight:bold;cursor:pointer;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    selectBtn.onclick=function(){fileInput.click();};
+
+    var modeBtn=d.createElement('button');
+    modeBtn.textContent='🔀 モード: 分割';
+    modeBtn.style.cssText='padding:5px 8px;font-size:11px;background:rgba(255,255,255,0.25);color:white;border:none;border-radius:6px;font-weight:bold;cursor:pointer;white-space:nowrap;';
+
+    var vPlayer=d.createElement('video');
+    vPlayer.id='pipLocalVideoPlayer';
+    vPlayer.controls=true;
+    vPlayer.playsInline=true;
+    vPlayer.style.cssText='width:100%;max-height:220px;background:#000;border-radius:8px;object-fit:contain;display:'+(pipLocalVideoUrl?'block':'none')+';';
+    if(pipLocalVideoUrl){vPlayer.src=pipLocalVideoUrl;}
+
+    chatPlaceholder=document.createElement('div');
+    chatPlaceholder.style.cssText='flex:1;';
+    chatEl.parentNode.insertBefore(chatPlaceholder,chatEl);
+    chatEl.style.cssText='flex:1;min-height:0;overflow-y:auto;padding:10px;';
+
+    var inputWrap=d.createElement('div');
+    inputWrap.id='pipInputWrap';
+    inputWrap.style.cssText='flex-shrink:0;padding:6px;background:rgba(0,0,0,0.25);';
+    var ta=d.createElement('textarea');
+    ta.id='pipMsg';
+    ta.placeholder='メッセージを入力... (Enter で送信)';
+    ta.style.cssText='width:100%;box-sizing:border-box;height:44px;margin-bottom:6px;padding:8px;border:none;border-radius:10px;background:rgba(255,255,255,0.15);color:white;font-size:13px;resize:none;font-family:inherit;';
+    var sendBtn=d.createElement('button');
+    sendBtn.textContent='送信';
+    sendBtn.style.cssText='width:100%;padding:8px;font-size:13px;';
+    var doSend=function(){
+      var v=ta.value;
+      if(v.trim()!==''){sendText(v);ta.value='';}
+    };
+    sendBtn.onclick=doSend;
+    ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}});
+    inputWrap.appendChild(ta);
+    inputWrap.appendChild(sendBtn);
+
+    function applyPipMode(mode){
+      if(mode==='split'){
+        vidWrap.style.display='flex';
+        vPlayer.style.maxHeight='200px';
+        vPlayer.style.height='auto';
+        chatEl.style.display='flex';
+        inputWrap.style.display='block';
+        modeBtn.textContent='🔀 モード: 分割';
+      }else if(mode==='video_full'){
+        vidWrap.style.display='flex';
+        vidWrap.style.flex='1';
+        vPlayer.style.maxHeight='100%';
+        vPlayer.style.height='100%';
+        vPlayer.style.flex='1';
+        chatEl.style.display='none';
+        inputWrap.style.display='none';
+        modeBtn.textContent='🔀 モード: 動画全面';
+      }else if(mode==='chat_full'){
+        vidWrap.style.display='none';
+        chatEl.style.display='flex';
+        inputWrap.style.display='block';
+        modeBtn.textContent='🔀 モード: チャット';
+      }
+    }
+
+    modeBtn.onclick=function(){
+      currentModeIdx=(currentModeIdx+1)%pipModes.length;
+      applyPipMode(pipModes[currentModeIdx]);
+    };
+
+    var loadVideo=function(file){
+      if(!file)return;
+      if(pipLocalVideoUrl){try{URL.revokeObjectURL(pipLocalVideoUrl);}catch(e){}}
+      pipLocalVideoUrl=URL.createObjectURL(file);
+      vPlayer.src=pipLocalVideoUrl;
+      vPlayer.style.display='block';
+      vPlayer.play().catch(function(){});
+      selectBtn.textContent='▶ '+file.name;
+      if(pipModes[currentModeIdx]==='chat_full'){
+        currentModeIdx=0;
+        applyPipMode(pipModes[currentModeIdx]);
+      }
+    };
+
+    fileInput.onchange=function(e){
+      if(e.target.files&&e.target.files[0]){loadVideo(e.target.files[0]);}
+    };
+
+    vidControls.appendChild(selectBtn);
+    vidControls.appendChild(modeBtn);
+    vidWrap.appendChild(vidControls);
+    vidWrap.appendChild(vPlayer);
+    d.body.appendChild(vidWrap);
+    d.body.appendChild(chatEl);
+    d.body.appendChild(inputWrap);
+
+    d.body.addEventListener('dragover',function(e){e.preventDefault();});
+    d.body.addEventListener('drop',function(e){
+      e.preventDefault();
+      if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]){
+        loadVideo(e.dataTransfer.files[0]);
+      }
+    });
+
+    win.addEventListener('pagehide',function(){
+      if(vPlayer){vPlayer.pause();vPlayer.src='';}
+      restoreChatFromPip();
+      pipWindow=null;
+    });
+  }).catch(function(err){
+    console.warn('PiP open error:',err);
+  });
+}
+
+function restoreChatFromPip(){
+  if(chatPlaceholder&&chatEl){
+    chatPlaceholder.parentNode.insertBefore(chatEl,chatPlaceholder);
+    chatPlaceholder.remove();chatPlaceholder=null;
+  }
+  chatEl.style.cssText='';
+  if(pipWindow&&!pipWindow.closed){try{pipWindow.close();}catch(e){}}
+}
+
+function closeChatPip(){
+  restoreChatFromPip();
+  pipWindow=null;
+}
+
+function toggleChatPip(){
+  if(pipWindow&&!pipWindow.closed){
+    closeChatPip();
+  }else{
+    openChatPip();
+  }
+}
+
+function ensureRemoteAudio(){
+  document.querySelectorAll('audio').forEach(function(a){
+    if(a.paused){try{a.play().catch(function(){});}catch(e){}}
+  });
+}
+document.addEventListener('click',ensureRemoteAudio);
+document.addEventListener('keydown',ensureRemoteAudio);
+setInterval(ensureRemoteAudio,2000);
+
+var mv = document.getElementById('myVideo');
+if (mv) {
+  mv.addEventListener('click', function() {
+    toggleFullscreen(this);
+  });
+}
+
+window.addEventListener('beforeunload',function(){
+  connections.forEach(function(conn){if(conn.open)try{conn.send({type:'leave',userId:myId});}catch(e){}});
+  if(peer){try{peer.destroy();}catch(e){}}
+});
+</script>
+</body>
+</html>
