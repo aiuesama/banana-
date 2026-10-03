@@ -214,8 +214,43 @@ function getTime(){var n=new Date();return String(n.getHours()).padStart(2,'0')+
 function formatFileSize(b){if(b===0)return'0 B';var k=1024,s=['B','KB','MB','GB'],i=Math.floor(Math.log(b)/Math.log(k));return Math.round(b/Math.pow(k,i)*100)/100+' '+s[i];}
 function getFileIcon(fn){var ext=fn.split('.').pop().toLowerCase();var icons={pdf:'📄',doc:'📘',docx:'📘',xls:'📗',xlsx:'📗',ppt:'📙',pptx:'📙',zip:'🗜️',rar:'🗜️','7z':'🗜️',mp3:'🎵',wav:'🎵',flac:'🎵',mp4:'🎬',avi:'🎬',mkv:'🎬',txt:'📝',html:'🌐',css:'🌐',js:'🌐'};return icons[ext]||'📎';}
 function genMsgId(){return myId+'_'+Date.now()+'_'+Math.random().toString(36).substring(2,9);}
-function updateStatus(t){var s=document.getElementById('status');if(s)s.innerText=t;}
+function rememberMessage(id){
+  receivedMessages.add(id);
+  if(receivedMessages.size>2000){
+    var it=receivedMessages.values();
+    for(var i=0;i<500;i++)receivedMessages.delete(it.next().value);
+  }
+}
+var baseStatus='準備中...';
+function updateStatus(t){baseStatus=t;var s=document.getElementById('status');if(s)s.innerText=baseStatus;}
 function scrollBottom(){var c=chatEl;if(c)c.scrollTop=c.scrollHeight;}
+
+var notifyAudioCtx=null;
+function primeNotifySound(){
+  try{
+    if(!notifyAudioCtx)notifyAudioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(notifyAudioCtx.state==='suspended')notifyAudioCtx.resume();
+  }catch(e){}
+}
+function playNotifySound(){
+  try{
+    if(!notifyAudioCtx)return;
+    if(notifyAudioCtx.state==='suspended')notifyAudioCtx.resume();
+    var t=notifyAudioCtx.currentTime;
+    var osc=notifyAudioCtx.createOscillator();
+    var gain=notifyAudioCtx.createGain();
+    osc.type='sine';
+    osc.frequency.setValueAtTime(880,t);
+    osc.frequency.setValueAtTime(1320,t+0.09);
+    gain.gain.setValueAtTime(0.0001,t);
+    gain.gain.exponentialRampToValueAtTime(0.25,t+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t+0.28);
+    osc.connect(gain);
+    gain.connect(notifyAudioCtx.destination);
+    osc.start(t);
+    osc.stop(t+0.3);
+  }catch(e){}
+}
 
 function selectFont(f){
   currentFont=f;
@@ -463,37 +498,49 @@ function handleData(data,fromConn){
       break;
     case 'user-list':
       if(data.users&&Array.isArray(data.users)){
-        data.users.forEach(function(u){if(u.userId!==myId&&!userMap.has(u.userId))userMap.set(u.userId,{name:u.username});});
+        var listed={};
+        data.users.forEach(function(u){if(u.userId!==myId){listed[u.userId]=true;if(!userMap.has(u.userId))userMap.set(u.userId,{name:u.username});}});
+        var stale=[];
+        userMap.forEach(function(info,uid){
+          if(uid!==myId&&!listed[uid]&&!(dmConns.has(uid)&&dmConns.get(uid).open))stale.push(uid);
+        });
+        stale.forEach(function(uid){userMap.delete(uid);unread.delete(uid);});
         updateUsers();
         if(camOn||micOn||isScreenSharing){setTimeout(renewCalls,500);}
       }
       break;
     case 'message':
       if(receivedMessages.has(data.messageId))return;
-      receivedMessages.add(data.messageId);
+      rememberMessage(data.messageId);
       addMessage(data.username,data.text,false,data.font);
+      playNotifySound();
       broadcastToOthers(data,fromConn);
       break;
     case 'image':
       if(receivedMessages.has(data.messageId))return;
-      receivedMessages.add(data.messageId);
+      rememberMessage(data.messageId);
       addImageMessage(data.username,data.imageData,false);
+      playNotifySound();
       broadcastToOthers(data,fromConn);
       break;
     case 'file-meta':
       if(receivedMessages.has(data.fileId))return;
-      receivedMessages.add(data.fileId);
+      rememberMessage(data.fileId);
       receivingFiles.set(data.fileId,{meta:data,chunks:new Array(data.totalChunks),receivedSize:0});
       addFileMessage(data.username,data.fileName,data.fileSize,null,false,data.fileId);
       addSystemMessage(data.username+' が '+data.fileName+' ('+formatFileSize(data.fileSize)+') を送信中...');
+      playNotifySound();
+      broadcastToOthers(data,fromConn);
       break;
     case 'file-chunk':
       var rf=receivingFiles.get(data.fileId);
-      if(!rf)return;
-      rf.chunks[data.index]=new Uint8Array(data.data);
-      rf.receivedSize+=data.data.byteLength;
-      updateFileProgress(data.fileId,Math.round(rf.receivedSize/rf.meta.fileSize*100));
-      if(rf.receivedSize>=rf.meta.fileSize)completeFileReceive(data.fileId);
+      if(rf){
+        rf.chunks[data.index]=new Uint8Array(data.data);
+        rf.receivedSize+=data.data.byteLength;
+        updateFileProgress(data.fileId,Math.min(100,Math.round(rf.receivedSize/rf.meta.fileSize*100)));
+        if(rf.receivedSize>=rf.meta.fileSize)completeFileReceive(data.fileId);
+      }
+      broadcastToOthers(data,fromConn);
       break;
     case 'file-complete':
       var cf=receivingFiles.get(data.fileId);
@@ -501,6 +548,7 @@ function handleData(data,fromConn){
         cf.receivedSize=cf.meta.fileSize;
         completeFileReceive(data.fileId);
       }
+      broadcastToOthers(data,fromConn);
       break;
     case 'leave':
       if(data.userId===myId)return;
@@ -528,10 +576,23 @@ function attachFileUrl(history,fileId,url){
   }
 }
 
+function assembleChunks(rf){
+  var total=rf.meta.totalChunks,missing=0;
+  for(var i=0;i<total;i++){
+    if(!rf.chunks[i]){
+      rf.chunks[i]=new Uint8Array(Math.min(CHUNK_SIZE,rf.meta.fileSize-i*CHUNK_SIZE));
+      missing++;
+    }
+  }
+  return missing;
+}
+
 function completeFileReceive(fileId){
   var rf=receivingFiles.get(fileId);
   if(!rf)return;
   receivingFiles.delete(fileId);
+  var missing=assembleChunks(rf);
+  if(missing>0)addSystemMessage('注意: '+rf.meta.fileName+' は '+missing+' チャンク欠損のため、一部が壊れている可能性があります');
   var blob=new Blob(rf.chunks,{type:rf.meta.mime||'application/octet-stream'});
   var url=URL.createObjectURL(blob);
   attachFileUrl(groupHistory,fileId,url);
@@ -650,8 +711,12 @@ function sendImage(event){
   reader.onload=function(){
     var messageId=genMsgId();
     var data={type:'image',username:myUsername,imageData:reader.result,messageId:messageId};
-    receivedMessages.add(messageId);
-    connections.forEach(function(conn){if(conn.open)try{conn.send(data);}catch(e){}});
+    rememberMessage(messageId);
+    var sentCount=0;
+    connections.forEach(function(conn){
+      if(conn.open){try{conn.send(data);sentCount++;}catch(e){}}
+    });
+    if(sentCount===0)addSystemMessage('送信先が切断されているため、画像が届いていません');
     addImageMessage(myUsername,reader.result,true);
   };
   reader.readAsDataURL(file);
@@ -659,21 +724,26 @@ function sendImage(event){
 }
 
 function sendText(text){
-  if(text.trim()===''||!myUsername)return;
-  if(currentDm){sendDmMessage(currentDm,text);return;}
+  if(text.trim()===''||!myUsername)return false;
+  if(currentDm){sendDmMessage(currentDm,text);return true;}
+  if(connections.size===0){addSystemMessage('接続中の相手がいません。メッセージは送信されていません');return false;}
   var messageId=genMsgId();
   var data={type:'message',username:myUsername,text:text,font:currentFont,messageId:messageId};
-  receivedMessages.add(messageId);
-  connections.forEach(function(conn){if(conn.open)try{conn.send(data);}catch(e){}});
+  rememberMessage(messageId);
+  var sentCount=0;
+  connections.forEach(function(conn){
+    if(conn.open){try{conn.send(data);sentCount++;}catch(e){}}
+  });
+  if(sentCount===0)addSystemMessage('送信先が切断されているため、メッセージが届いていません');
   addMessage(myUsername,text,true,currentFont);
+  return true;
 }
 
 function sendMessage(){
   var input=document.getElementById('msg');
   var text=input?input.value:'';
   if(text.trim()===''||!myUsername)return;
-  input.value='';input.focus();
-  sendText(text);
+  if(sendText(text)){input.value='';input.focus();}
 }
 
 function handleKeyPress(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
@@ -760,7 +830,10 @@ function renderItem(it){
 function addMessage(username,text,isOwn,font){pushGroup({kind:'msg',username:username,text:text,font:font,own:isOwn});}
 function addImageMessage(username,imageData,isOwn){pushGroup({kind:'image',username:username,imageData:imageData,own:isOwn});}
 function addFileMessage(username,fileName,fileSize,url,isOwn,fileId){pushGroup({kind:'file',username:username,fileName:fileName,fileSize:fileSize,fileId:fileId,url:url,own:isOwn});}
-function addSystemMessage(text){pushGroup({kind:'sys',text:text});}
+function addSystemMessage(text){
+  pushGroup({kind:'sys',text:text});
+  if(currentDm)pushDm(currentDm,{kind:'sys',text:text});
+}
 
 function downloadFile(fileName,url){var a=document.createElement('a');a.href=url;a.download=fileName;a.click();}
 
@@ -816,17 +889,20 @@ function handleDmData(data,conn){
       break;
     case 'dm':
       if(receivedMessages.has(data.messageId))return;
-      receivedMessages.add(data.messageId);
+      rememberMessage(data.messageId);
       pushDm(uid,{kind:'msg',username:data.from,text:data.text,font:data.font,own:false});
+      playNotifySound();
       break;
     case 'dm-image':
       if(receivedMessages.has(data.messageId))return;
-      receivedMessages.add(data.messageId);
+      rememberMessage(data.messageId);
       pushDm(uid,{kind:'image',username:data.from,imageData:data.imageData,own:false});
+      playNotifySound();
       break;
     case 'dm-meta':
       dmReceivingFiles.set(data.fileId,{meta:data,chunks:new Array(data.totalChunks),receivedSize:0});
       pushDm(uid,{kind:'file',username:data.from,fileName:data.fileName,fileSize:data.fileSize,fileId:data.fileId,url:null,own:false});
+      playNotifySound();
       break;
     case 'dm-chunk':
       var rf=dmReceivingFiles.get(data.fileId);
@@ -846,6 +922,8 @@ function completeDmFileReceive(uid,fileId){
   var rf=dmReceivingFiles.get(fileId);
   if(!rf)return;
   dmReceivingFiles.delete(fileId);
+  var missing=assembleChunks(rf);
+  if(missing>0)addSystemMessage('注意: '+rf.meta.fileName+' は '+missing+' チャンク欠損のため、一部が壊れている可能性があります');
   var blob=new Blob(rf.chunks,{type:rf.meta.mime||'application/octet-stream'});
   var url=URL.createObjectURL(blob);
   var items=dmHistory.get(uid);
@@ -939,7 +1017,8 @@ function updateUsers(){
       usersDiv.appendChild(div);
     }
   });
-  updateStatus('オンライン: '+count+'人');
+  var st=document.getElementById('status');
+  if(st)st.innerText=baseStatus+' ／ オンライン: '+count+'人';
 }
 
 /* --- 通話・画面共有 --- */
@@ -1031,6 +1110,8 @@ function toggleCam(){
   }else{
     if(localStream){localStream.getVideoTracks().forEach(function(t){localStream.removeTrack(t);t.stop();});}
     camOn=false;
+    var mvEl=document.getElementById('myVideo');
+    if(mvEl)mvEl.srcObject=(localStream&&localStream.getVideoTracks().length>0)?localStream:null;
     updateMediaBtns();
     if(!micOn&&!isScreenSharing){endCall();}
     else{renewCalls();}
@@ -1281,7 +1362,7 @@ function openChatPip(){
     sendBtn.style.cssText='width:100%;padding:8px;font-size:13px;';
     var doSend=function(){
       var v=ta.value;
-      if(v.trim()!==''){sendText(v);ta.value='';}
+      if(v.trim()!==''&&sendText(v)){ta.value='';}
     };
     sendBtn.onclick=doSend;
     ta.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}});
@@ -1391,6 +1472,8 @@ function ensureRemoteAudio(){
 }
 document.addEventListener('click',ensureRemoteAudio);
 document.addEventListener('keydown',ensureRemoteAudio);
+document.addEventListener('click',primeNotifySound);
+document.addEventListener('keydown',primeNotifySound);
 setInterval(ensureRemoteAudio,2000);
 
 var mv = document.getElementById('myVideo');
@@ -1399,6 +1482,85 @@ if (mv) {
     toggleFullscreen(this);
   });
 }
+
+/* --- 残骸チェック監視（ここから追加） --- */
+function checkCleanup(){
+  var problems=[];
+
+  // 1) リモート映像の残り: 通話中じゃないのにDOMに残ってたら削除
+  var container=document.getElementById('remoteVideos');
+  if(container){
+    container.querySelectorAll('.remote-video-wrap').forEach(function(wrap){
+      var pid=wrap.id.replace(/^rv-/,'');
+      if(!activeCalls.has(pid)){
+        problems.push('リモート映像の残骸を検出: '+pid);
+        wrap.remove();
+      }else{
+        // 通話中でも映像が空になってないか確認
+        var v=wrap.querySelector('video');
+        if(v&&!v.srcObject)problems.push('映像が空のリモート枠: '+pid);
+      }
+    });
+  }
+
+  // 2) ストリームの残り: OFFになった種類のtrackだけ停止（マイク単体使用を保護）
+  if(localStream&&localStream!==screenStream){
+    var live=[];
+    if(!camOn)localStream.getVideoTracks().forEach(function(t){if(t.readyState==='live')live.push(t);});
+    if(!micOn)localStream.getAudioTracks().forEach(function(t){if(t.readyState==='live')live.push(t);});
+    if(live.length>0){
+      problems.push('OFFフラグなのに生存track: '+live.length+'本');
+      live.forEach(function(t){t.stop();localStream.removeTrack(t);});
+      if(localStream.getTracks().filter(function(t){return t.readyState==='live';}).length===0){
+        localStream=null;
+        var mvv=document.getElementById('myVideo');
+        if(mvv)mvv.srcObject=null;
+      }
+    }
+  }
+  if(!isScreenSharing&&screenStream){
+    var slive=screenStream.getTracks().filter(function(t){return t.readyState==='live';});
+    if(slive.length>0){
+      problems.push('画面共有停止後にtrackが生存: '+slive.length+'本');
+      slive.forEach(function(t){t.stop();});
+    }
+    screenStream=null;
+  }
+
+  // 3) PiPの残り: 小窓が無いのにチャット欄が置き去りだったら戻す
+  if(!pipWindow||pipWindow.closed){
+    if(chatPlaceholder){
+      problems.push('PiP閉鎖後にチャット欄が戻ってない');
+      restoreChatFromPip();
+    }
+  }
+
+  // 4) 切れた接続の送信キュー残り
+  sendQueues.forEach(function(q,pid){
+    var conn=connections.get(pid);
+    if((!conn||!conn.open)&&!q.busy&&q.jobs.length===0){
+      problems.push('切断済みの送信キューを検出: '+pid);
+      sendQueues.delete(pid);
+    }
+  });
+
+  // 5) 受信途中で止まってるファイル（検出だけ）
+  if(receivingFiles.size>0){
+    problems.push('受信途中のファイルが'+receivingFiles.size+'件ある');
+  }
+
+  if(problems.length>0){
+    console.warn('[残骸チェック]',new Date().toLocaleTimeString(),problems);
+    return false; // 残ってた
+  }
+  console.log('[残骸チェック]',new Date().toLocaleTimeString(),'きれいです。何も残ってません');
+  return true; // 完全に消えてる
+}
+window.checkCleanup=checkCleanup;
+
+// 3秒ごとに自動で監視＆自動片付け
+setInterval(checkCleanup,3000);
+/* --- 残骸チェック監視（ここまで追加） --- */
 
 window.addEventListener('beforeunload',function(){
   connections.forEach(function(conn){if(conn.open)try{conn.send({type:'leave',userId:myId});}catch(e){}});
