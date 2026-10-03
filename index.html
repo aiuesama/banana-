@@ -81,6 +81,7 @@ video:fullscreen{width:100vw;height:100vh;object-fit:contain;background:#000;}
   <div class="login-box">
     <h2>Banana Chat</h2>
     <input id="username" placeholder="ユーザー名を入力" maxlength="15" onkeydown="if(event.key==='Enter')login()">
+    <input id="roomKey" placeholder="合言葉（友達と相談/空欄なら公開部屋）" maxlength="30" style="font-size:13px;">
     <button type="button" id="loginBtn" onclick="login()">チャットに参加する</button>
   </div>
 </div>
@@ -125,12 +126,16 @@ video:fullscreen{width:100vw;height:100vh;object-fit:contain;background:#000;}
         <div class="call-controls">
           <button class="danger" id="micBtn" onclick="toggleMic()">マイク: OFF (ミュート)</button>
           <button class="secondary" id="camBtn" onclick="toggleCam()">カメラ: OFF</button>
+          <button class="secondary" id="camSwitchBtn" onclick="switchCamera()">カメラ切替</button>
         </div>
       </div>
     </div>
     <div class="panel">
       <h3>オンラインユーザー</h3>
       <div id="users"></div>
+      <div class="call-controls" style="margin-top:10px;">
+        <button class="secondary" id="stealthBtn" onclick="toggleStealth()">名前を隠す: OFF</button>
+      </div>
     </div>
   </div>
 </div>
@@ -176,17 +181,22 @@ var micAudioCtx=null;
 var micBoostGain=null;
 var rawMicStream=null;
 var camOn=false;
+var camFacing='user';
+var currentCamDeviceId=null;
 var chatEl=document.getElementById('chat');
 var pipWindow=null;
 var chatPlaceholder=null;
 var pipLocalVideoUrl=null;
 var isLoggedIn=false;
+var stealth=false;
 
 function login(){
   var input=document.getElementById('username');
   var u=input?input.value.trim():'';
   if(!u){alert('ユーザー名を入力してください');return;}
   myUsername=u;
+  var rk=(document.getElementById('roomKey')?document.getElementById('roomKey').value:'').trim();
+  GLOBAL_ROOM_ID=rk?'banana-private-'+rk:'banana-global-chat-v2';
   isLoggedIn=true;
   var overlay=document.getElementById('loginOverlay');
   if(overlay)overlay.style.display='none';
@@ -211,6 +221,18 @@ function login(){
 window.login=login;
 
 function getTime(){var n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');}
+function maskedName(){return stealth?'':myUsername;}
+function toggleStealth(){
+  stealth=!stealth;
+  var btn=document.getElementById('stealthBtn');
+  if(btn){
+    if(stealth){btn.className='success';btn.innerText='名前を隠す: ON';}
+    else{btn.className='secondary';btn.innerText='名前を隠す: OFF';}
+  }
+  broadcastToOthers({type:'rename',userId:myId,username:maskedName()});
+  updateUsers();
+  addSystemMessage(stealth?'ステルス ON: あなたは一覧から消えた。覗き見し放題だ':'ステルス OFF: 名前が戻った');
+}
 function formatFileSize(b){if(b===0)return'0 B';var k=1024,s=['B','KB','MB','GB'],i=Math.floor(Math.log(b)/Math.log(k));return Math.round(b/Math.pow(k,i)*100)/100+' '+s[i];}
 function getFileIcon(fn){var ext=fn.split('.').pop().toLowerCase();var icons={pdf:'📄',doc:'📘',docx:'📘',xls:'📗',xlsx:'📗',ppt:'📙',pptx:'📙',zip:'🗜️',rar:'🗜️','7z':'🗜️',mp3:'🎵',wav:'🎵',flac:'🎵',mp4:'🎬',avi:'🎬',mkv:'🎬',txt:'📝',html:'🌐',css:'🌐',js:'🌐'};return icons[ext]||'📎';}
 function genMsgId(){return myId+'_'+Date.now()+'_'+Math.random().toString(36).substring(2,9);}
@@ -351,7 +373,7 @@ function tryConnectToHub(){
     setupConnection(conn);
   });
   conn.on('error',function(){
-    if(hubConnectSettled)return;
+    if(!hubConnectSettled)return;
     hubConnectSettled=true;
     if(hubConnectTimeout){clearTimeout(hubConnectTimeout);hubConnectTimeout=null;}
     if(hubProbeCount<2){
@@ -444,7 +466,7 @@ function setupConnection(conn){
   var peerId=conn.peer;
   if(connections.has(peerId))return;
   connections.set(peerId,conn);
-  var sendJoin=function(){try{conn.send({type:'join',username:myUsername,userId:myId});}catch(e){}};
+  var sendJoin=function(){try{conn.send({type:'join',username:maskedName(),userId:myId});}catch(e){}};
   if(conn.open)sendJoin();else conn.on('open',sendJoin);
   conn.on('data',function(data){handleData(data,conn);});
   conn.on('close',function(){
@@ -457,8 +479,8 @@ function setupConnection(conn){
       var info=userMap.get(leftUserId);
       if(info)leftName=info.name;
       userMap.delete(leftUserId);
-      addSystemMessage(leftName+' が退室しました');
-      broadcastToOthers({type:'leave',userId:leftUserId},conn);
+      if(leftName)addSystemMessage(leftName+' が退室しました');
+      broadcastToOthers({type:'leave',userId:leftUserId,username:leftName},conn);
     }
     if(activeCalls.has(peerId)){activeCalls.get(peerId).close();activeCalls.delete(peerId);removeRemoteVideo(peerId);}
     updateUsers();
@@ -483,15 +505,17 @@ function handleData(data,fromConn){
     case 'join':
       if(data.userId===myId)return;
       if(userMap.has(data.userId))return;
-      userMap.set(data.userId,{name:data.username});
+      if(data.username){
+        userMap.set(data.userId,{name:data.username});
+        addSystemMessage(data.username+' が入室しました');
+      }
       if(fromConn)connUserMap.set(fromConn.peer,data.userId);
-      addSystemMessage(data.username+' が入室しました');
       updateUsers();
       broadcastToOthers(data,fromConn);
       if(isHub&&fromConn&&fromConn.open){
         var userList=[];
         userMap.forEach(function(info,uid){if(uid!==data.userId&&uid!==myId)userList.push({userId:uid,username:info.name});});
-        userList.push({userId:myId,username:myUsername});
+        userList.push({userId:myId,username:maskedName()});
         if(userList.length>0){try{fromConn.send({type:'user-list',users:userList});}catch(e){}}
       }
       if(camOn||micOn||isScreenSharing){setTimeout(renewCalls,500);}
@@ -499,7 +523,7 @@ function handleData(data,fromConn){
     case 'user-list':
       if(data.users&&Array.isArray(data.users)){
         var listed={};
-        data.users.forEach(function(u){if(u.userId!==myId){listed[u.userId]=true;if(!userMap.has(u.userId))userMap.set(u.userId,{name:u.username});}});
+        data.users.forEach(function(u){if(u.userId!==myId&&u.username){listed[u.userId]=true;if(!userMap.has(u.userId))userMap.set(u.userId,{name:u.username});}});
         var stale=[];
         userMap.forEach(function(info,uid){
           if(uid!==myId&&!listed[uid]&&!(dmConns.has(uid)&&dmConns.get(uid).open))stale.push(uid);
@@ -508,6 +532,17 @@ function handleData(data,fromConn){
         updateUsers();
         if(camOn||micOn||isScreenSharing){setTimeout(renewCalls,500);}
       }
+      break;
+    case 'rename':
+      if(data.userId===myId)break;
+      if(data.username===''){
+        userMap.delete(data.userId);
+        unread.delete(data.userId);
+      }else if(userMap.has(data.userId)){
+        userMap.get(data.userId).name=data.username;
+      }
+      updateUsers();
+      broadcastToOthers(data,fromConn);
       break;
     case 'message':
       if(receivedMessages.has(data.messageId))return;
@@ -553,11 +588,11 @@ function handleData(data,fromConn){
     case 'leave':
       if(data.userId===myId)return;
       var leftInfo=userMap.get(data.userId);
-      var leftName=leftInfo?leftInfo.name:'ゲスト';
+      var leftName=leftInfo?leftInfo.name:(data.username||'');
       userMap.delete(data.userId);
       connUserMap.forEach(function(uid,cpid){if(uid===data.userId)connUserMap.delete(cpid);});
       if(activeCalls.has(data.userId)){activeCalls.get(data.userId).close();activeCalls.delete(data.userId);removeRemoteVideo(data.userId);}
-      addSystemMessage(leftName+' が退室しました');
+      if(leftName)addSystemMessage(leftName+' が退室しました');
       updateUsers();
       broadcastToOthers(data,fromConn);
       break;
@@ -654,7 +689,7 @@ function pumpSendQueue(pid){
 function sendOneFileToConn(conn,file,fileId,done){
   var totalChunks=Math.ceil(file.size/CHUNK_SIZE);
   if(!conn.open){addSystemMessage(file.name+' を送れませんでした（相手が切断）');if(done)done();return;}
-  var meta={type:'file-meta',fileId:fileId,username:myUsername,fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks};
+  var meta={type:'file-meta',fileId:fileId,username:maskedName(),fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks};
   try{conn.send(meta);}catch(e){}
   var offset=0;
   var chunkIndex=0;
@@ -680,7 +715,7 @@ function sendOneFileToConn(conn,file,fileId,done){
       chunkIndex++;
       offset=end;
       updateFileProgress(fileId,Math.min(100,Math.round(offset/file.size*100)));
-      waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?40:2);});
+      waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?80:2);});
     };
     reader.onerror=function(err){console.error('FileReader error:',err);if(done)done();};
     reader.readAsArrayBuffer(slice);
@@ -710,7 +745,7 @@ function sendImage(event){
   var reader=new FileReader();
   reader.onload=function(){
     var messageId=genMsgId();
-    var data={type:'image',username:myUsername,imageData:reader.result,messageId:messageId};
+    var data={type:'image',username:maskedName(),imageData:reader.result,messageId:messageId};
     rememberMessage(messageId);
     var sentCount=0;
     connections.forEach(function(conn){
@@ -728,7 +763,7 @@ function sendText(text){
   if(currentDm){sendDmMessage(currentDm,text);return true;}
   if(connections.size===0){addSystemMessage('接続中の相手がいません。メッセージは送信されていません');return false;}
   var messageId=genMsgId();
-  var data={type:'message',username:myUsername,text:text,font:currentFont,messageId:messageId};
+  var data={type:'message',username:maskedName(),text:text,font:currentFont,messageId:messageId};
   rememberMessage(messageId);
   var sentCount=0;
   connections.forEach(function(conn){
@@ -790,8 +825,10 @@ function renderItem(it){
   }
   var msg=document.createElement('div');
   msg.className=it.own?'msg own':'msg other';
-  var nameDiv=document.createElement('div');nameDiv.innerText=it.username;
-  msg.appendChild(nameDiv);
+  if(it.username){
+    var nameDiv=document.createElement('div');nameDiv.innerText=it.username;
+    msg.appendChild(nameDiv);
+  }
   if(it.kind==='msg'){
     var t=document.createElement('div');t.innerText=it.text;
     if(FONT_MAP[it.font])t.classList.add(FONT_MAP[it.font]);
@@ -856,7 +893,7 @@ function ensureDmConn(uid){
       if(settled)return;
       settled=true;clearTimeout(timeout);
       dmConns.set(uid,conn);
-      try{conn.send({type:'dm-hello',username:myUsername,userId:myId});}catch(e){}
+      try{conn.send({type:'dm-hello',username:maskedName(),userId:myId});}catch(e){}
       resolve(conn);
     });
     conn.on('error',function(){
@@ -872,7 +909,7 @@ function setupDmConnection(conn){
   var old=dmConns.get(uid);
   if(old&&old!==conn){try{old.close();}catch(e){}}
   dmConns.set(uid,conn);
-  var sendHello=function(){try{conn.send({type:'dm-hello',username:myUsername,userId:myId});}catch(e){}};
+  var sendHello=function(){try{conn.send({type:'dm-hello',username:maskedName(),userId:myId});}catch(e){}};
   if(conn.open)sendHello();else conn.on('open',sendHello);
   conn.on('data',function(data){handleDmData(data,conn);});
   conn.on('close',function(){if(dmConns.get(uid)===conn)dmConns.delete(uid);});
@@ -936,7 +973,7 @@ function sendDmMessage(uid,text){
   var messageId=genMsgId();
   pushDm(uid,{kind:'msg',username:myUsername,text:text,font:currentFont,own:true});
   ensureDmConn(uid).then(function(conn){
-    conn.send({type:'dm',from:myUsername,text:text,font:currentFont,messageId:messageId});
+    conn.send({type:'dm',from:maskedName(),text:text,font:currentFont,messageId:messageId});
   }).catch(function(){
     pushDm(uid,{kind:'sys',text:'個人チャットに接続できませんでした'});
   });
@@ -948,7 +985,7 @@ function sendDmImage(uid,file){
     var messageId=genMsgId();
     pushDm(uid,{kind:'image',username:myUsername,imageData:reader.result,own:true});
     ensureDmConn(uid).then(function(conn){
-      conn.send({type:'dm-image',from:myUsername,imageData:reader.result,messageId:messageId});
+      conn.send({type:'dm-image',from:maskedName(),imageData:reader.result,messageId:messageId});
     }).catch(function(){
       pushDm(uid,{kind:'sys',text:'個人チャットに接続できませんでした'});
     });
@@ -962,7 +999,7 @@ function sendDmFile(uid,file){
   var totalChunks=Math.ceil(file.size/CHUNK_SIZE);
   pushDm(uid,{kind:'file',username:myUsername,fileName:file.name,fileSize:file.size,fileId:fileId,url:null,own:true});
   return ensureDmConn(uid).then(function(conn){
-    conn.send({type:'dm-meta',fileId:fileId,from:myUsername,fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks});
+    conn.send({type:'dm-meta',fileId:fileId,from:maskedName(),fileName:file.name,fileSize:file.size,mime:file.type,totalChunks:totalChunks});
     return new Promise(function(resolve){
       var offset=0,index=0;
       var sendNext=function(){
@@ -983,7 +1020,7 @@ function sendDmFile(uid,file){
           try{conn.send({type:'dm-chunk',fileId:fileId,index:index,data:e.target.result});}catch(err){}
           index++;offset=end;
           updateFileProgress(fileId,Math.min(100,Math.round(offset/file.size*100)));
-          waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?40:2);});
+          waitForBufferDrain(conn).then(function(){setTimeout(sendNext,activeCalls.size>0?80:2);});
         };
         reader.onerror=function(){resolve();};
         reader.readAsArrayBuffer(slice);
@@ -1003,7 +1040,7 @@ function updateUsers(){
   usersDiv.innerHTML='';
   var me=document.createElement('div');
   me.className='user-me';
-  me.innerText=myUsername+' (あなた)';
+  me.innerText=stealth?'(あなた — 一覧から非表示中)':myUsername+' (あなた)';
   usersDiv.appendChild(me);
   var count=1;
   userMap.forEach(function(info,uid){
@@ -1099,6 +1136,7 @@ function toggleCam(){
   if(!camOn){
     navigator.mediaDevices.getUserMedia({video:{width:{max:640},frameRate:{max:20}},audio:false}).then(function(camStream){
       var vt=camStream.getVideoTracks()[0];
+      currentCamDeviceId=(vt.getSettings&&vt.getSettings().deviceId)||currentCamDeviceId;
       if(localStream&&localStream.getTracks().length>0){localStream.addTrack(vt);}
       else{localStream=camStream;}
       camOn=true;
@@ -1119,6 +1157,50 @@ function toggleCam(){
   }
 }
 
+function applyCamTrack(newTrack){
+  if(localStream){
+    var oldT=localStream.getVideoTracks()[0];
+    if(oldT){localStream.removeTrack(oldT);try{oldT.stop();}catch(e){}}
+    localStream.addTrack(newTrack);
+  }else{
+    localStream=new MediaStream([newTrack]);
+  }
+  currentCamDeviceId=(newTrack.getSettings&&newTrack.getSettings().deviceId)||currentCamDeviceId;
+  var mv=document.getElementById('myVideo');
+  if(mv)mv.srcObject=localStream;
+  activeCalls.forEach(function(call){
+    var pc=call.peerConnection;
+    if(!pc)return;
+    var sender=pc.getSenders().find(function(s){return s.track&&s.track.kind==='video';});
+    if(sender){try{sender.replaceTrack(newTrack);}catch(e){}}
+  });
+  renewCalls();
+}
+
+function switchCamera(){
+  if(!camOn){alert('先にカメラを ON にしてください');return;}
+  navigator.mediaDevices.enumerateDevices().then(function(devices){
+    var cams=devices.filter(function(d){return d.kind==='videoinput';});
+    if(cams.length>=2){
+      var idx=-1;
+      for(var i=0;i<cams.length;i++){if(cams[i].deviceId===currentCamDeviceId){idx=i;break;}}
+      var next=cams[(idx+1+cams.length)%cams.length];
+      if(idx===-1&&cams.length>1)next=cams[1];
+      navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:next.deviceId},width:{max:640},frameRate:{max:20}},audio:false}).then(function(s){
+        applyCamTrack(s.getVideoTracks()[0]);
+        addSystemMessage('カメラを切替: '+(next.label||'別のカメラ'));
+      }).catch(function(){alert('カメラ切替に失敗しました');});
+    }else{
+      var want=(camFacing==='user')?'environment':'user';
+      navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:want},width:{max:640},frameRate:{max:20}},audio:false}).then(function(s){
+        camFacing=want;
+        applyCamTrack(s.getVideoTracks()[0]);
+        addSystemMessage('カメラを切替: '+(want==='user'?'フロント':'背面'));
+      }).catch(function(){alert('切り替えられる別のカメラが見つかりません');});
+    }
+  }).catch(function(){alert('カメラ一覧の取得に失敗しました');});
+}
+
 function buildShareStream(){
   var tracks=[];
   if(screenStream){
@@ -1136,6 +1218,51 @@ function getStreamToSend(){
   if(isScreenSharing&&screenStream)return buildShareStream();
   return localStream;
 }
+
+/* --- SDP 帯域制限（ここから追加） --- */
+function limitSdpBitrate(sdp){
+  try{
+    var lines=sdp.split('\r\n');
+    var opusPt=null;
+    var i;
+    for(i=0;i<lines.length;i++){
+      var m=lines[i].match(/^a=rtpmap:(\d+)\s+opus\/48000/i);
+      if(m){opusPt=m[1];break;}
+    }
+    var out=[];
+    for(i=0;i<lines.length;i++){
+      var line=lines[i];
+      // 既存の b=AS: 行は削除（後で m=video の直下に制限値を再注入する）
+      if(line.indexOf('b=AS:')===0)continue;
+      // Opus の既存 fmtp は置き換える
+      if(opusPt!==null&&line.indexOf('a=fmtp:'+opusPt+' ')===0)continue;
+      out.push(line);
+      if(line.indexOf('m=audio')===0&&opusPt!==null){
+        out.push('a=fmtp:'+opusPt+' stereo=0;maxaveragebitrate=20000');
+      }
+      if(line.indexOf('m=video')===0){
+        out.push('b=AS:150');
+      }
+    }
+    return out.join('\r\n');
+  }catch(e){return sdp;}
+}
+
+function applySdpBitrateLimit(call){
+  try{
+    var pc=call&&call.peerConnection;
+    if(!pc||pc.__bandwidthLimited)return;
+    pc.__bandwidthLimited=true;
+    var orig=pc.setLocalDescription.bind(pc);
+    pc.setLocalDescription=function(desc){
+      if(desc&&typeof desc.sdp==='string'){
+        desc={type:desc.type,sdp:limitSdpBitrate(desc.sdp)};
+      }
+      return orig(desc);
+    };
+  }catch(e){}
+}
+/* --- SDP 帯域制限（ここまで追加） --- */
 
 function renewCalls(){
   if(!peer||peer.destroyed)return;
@@ -1162,9 +1289,10 @@ function renewCalls(){
         return;
       }
     }
-    if(existingCall){try{existingCall.close();}catch(e){}}
+    if(existingCall){try{existingCall.close();}catch(e){}activeCalls.delete(uid);removeRemoteVideo(uid);}
     var call=peer.call(uid,streamToSend);
     if(!call)return;
+    applySdpBitrateLimit(call);
     activeCalls.set(uid,call);
     call.on('stream',function(remoteStream){addRemoteVideo(uid,remoteStream);});
     call.on('close',function(){
@@ -1176,10 +1304,20 @@ function renewCalls(){
 
 function handleIncomingCall(call){
   var uid=call.peer;
-  if(activeCalls.has(uid)&&activeCalls.get(uid)!==call){
-    try{activeCalls.get(uid).close();}catch(e){}
+  var existing=activeCalls.get(uid);
+  if(existing&&existing!==call){
+    var epc=existing.peerConnection;
+    var alive=epc&&epc.signalingState!=='closed'&&epc.connectionState!=='closed'&&epc.connectionState!=='failed'&&epc.iceConnectionState!=='failed'&&epc.iceConnectionState!=='disconnected';
+    if(alive&&myId<uid){
+      try{call.close();}catch(e){}
+      return;
+    }
+    try{existing.close();}catch(e){}
+    activeCalls.delete(uid);
+    removeRemoteVideo(uid);
   }
   activeCalls.set(uid,call);
+  applySdpBitrateLimit(call);
   var streamToSend=getStreamToSend();
   if(streamToSend&&streamToSend.getTracks().length>0){
     call.answer(streamToSend);
@@ -1563,7 +1701,7 @@ setInterval(checkCleanup,3000);
 /* --- 残骸チェック監視（ここまで追加） --- */
 
 window.addEventListener('beforeunload',function(){
-  connections.forEach(function(conn){if(conn.open)try{conn.send({type:'leave',userId:myId});}catch(e){}});
+  connections.forEach(function(conn){if(conn.open)try{conn.send({type:'leave',userId:myId,username:maskedName()});}catch(e){}});
   if(peer){try{peer.destroy();}catch(e){}}
 });
 </script>
